@@ -26,4 +26,7 @@ else:
     from descalefed.core import as_variable
     from descalefed.core import setup_variable
 
+import descalefed.functions
+import descalefed.utils
+
 setup_variable()
