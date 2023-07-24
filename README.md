@@ -28,7 +28,7 @@
     ~~~
 
 ***
-### ** to-do list **
+###  To-do list 
 - [ ] Support for optimizers
 - [X] Support for activation functions
 - [ ] Auto load data support
