@@ -25,8 +25,11 @@ else:
     from descalefed.core import as_array
     from descalefed.core import as_variable
     from descalefed.core import setup_variable
+    from descalefed.core import Parameter
+    from descalefed.layers import Layer
 
 import descalefed.functions
 import descalefed.utils
+import descalefed.layers
 
 setup_variable()

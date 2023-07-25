@@ -7,7 +7,7 @@
 
 # nn
 import numpy as np
-from descalefed import as_variable, Variable, utils, no_grad
+from descalefed import as_variable, Variable, utils, no_grad, models
 from descalefed.functions import exp
 from descalefed import functions as F
 
@@ -97,3 +97,34 @@ if __name__ == '__main__':
         W.data -= lr * W.grad.data
         b.data -= lr * b.grad.data
         print(W, b, loss)
+
+
+# models
+if __name__ == '__main__':
+    # x = Variable(np.random.randn(5, 10), name='x')
+    # model = models.TwoLayerNetwork(100, 10)
+    # model.plot(x)
+
+    np.random.seed(42)
+    x = np.random.rand(100, 1)
+    y = np.sin(2 * np.pi * x) + np.random.rand(100, 1)
+
+    lr = 0.1
+    max_iter = 10000
+    hidden_size = 10
+
+    model = models.MLP([hidden_size, 7, 1])
+
+    for i in range(max_iter):
+        y_pred = model(x)
+        loss = F.mean_squared_error(y_pred, y)
+
+        model.cleargrads()
+        loss.backward()
+
+        with no_grad():
+            for p in model.params():
+                p.data -= lr * p.grad.data
+
+        if i % 1000 == 0:
+            print(loss)
