@@ -1,9 +1,8 @@
-import numpy as np
-from descalefed import Variable
-
 import os
 import subprocess
 import time
+import descalefed.cuda as cuda
+import urllib.request
 
 
 def _dot_var(v, verbose=False):
@@ -102,6 +101,18 @@ def reshape_sum_backward(gy, x_shape, axis, keepdims):
     gy = gy.reshape(shape)  # reshape
     return gy
 
+
+def logsumexp(x, axis=1):
+    xp = cuda.get_array_module(x)
+    m = x.max(axis=axis, keepdims=True)
+    y = x - m
+    xp.exp(y, out=y)
+    s = y.sum(axis=axis, keepdims=True)
+    xp.log(s, out=s)
+    m += s
+    return m
+
+
 def sum_to(x, shape):
     """Sum elements along axes to output an array of a given shape.
 
@@ -123,10 +134,103 @@ def sum_to(x, shape):
     return y
 
 
+def pair(x):
+    if isinstance(x, int):
+        return (x, x)
+    elif isinstance(x, tuple):
+        assert len(x) == 2
+        return x
+    else:
+        raise ValueError
+
+
+# =============================================================================
+# download function
+# =============================================================================
+def show_progress(block_num, block_size, total_size):
+    bar_template = "\r[{}] {:.2f}%"
+
+    downloaded = block_num * block_size
+    p = downloaded / total_size * 100
+    i = int(downloaded / total_size * 30)
+    if p >= 100.0: p = 100.0
+    if i >= 30: i = 30
+    bar = "#" * i + "." * (30 - i)
+    print(bar_template.format(bar, p), end='')
+
+
+cache_dir = os.path.join(os.path.expanduser('~'), '.descalefed')
+
+
+def get_file(url, file_name=None):
+    """Download a file from the `url` if it is not in the cache.
+
+    The file at the `url` is downloaded to the `~/.dezero`.
+
+    Args:
+        url (str): URL of the file.
+        file_name (str): Name of the file. It `None` is specified the original
+            file name is used.
+
+    Returns:
+        str: Absolute path to the saved file.
+    """
+    if file_name is None:
+        file_name = url[url.rfind('/') + 1:]
+    file_path = os.path.join(cache_dir, file_name)
+
+    if not os.path.exists(cache_dir):
+        os.mkdir(cache_dir)
+
+    if os.path.exists(file_path):
+        return file_path
+
+    print("Downloading: " + file_name)
+    try:
+        urllib.request.urlretrieve(url, file_path, show_progress)
+    except (Exception, KeyboardInterrupt) as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
+    print(" Done")
+
+    return file_path
+
+
 def goldstein(x, y):
     z = (1 + (x + y + 1) ** 2 * (19 - 14 * x + 3 * x ** 2 - 14 * y + 6 * x * y + 3 * y ** 2)) * \
         (30 + (2 * x - 3 * y) ** 2 * (18 - 32 * x + 12 * x ** 2 + 48 * y - 36 * x * y + 27 * y ** 2))
     return z
+
+
+def load_cache_npz(filename, train=False):
+    filename = filename[filename.rfind('/') + 1:]
+    prefix = '.train.npz' if train else '.test.npz'
+    filepath = os.path.join(cache_dir, filename + prefix)
+    if not os.path.exists(filepath):
+        return None, None
+
+    loaded = np.load(filepath)
+    return loaded['data'], loaded['label']
+
+
+def save_cache_npz(data, label, filename, train=False):
+    filename = filename[filename.rfind('/') + 1:]
+    prefix = '.train.npz' if train else '.test.npz'
+    filepath = os.path.join(cache_dir, filename + prefix)
+
+    if os.path.exists(filepath):
+        return
+
+    print("Saving: " + filename + prefix)
+    try:
+        np.savez_compressed(filepath, data=data, label=label)
+    except (Exception, KeyboardInterrupt) as e:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        raise
+    print(" Done")
+    return filepath
 
 # x  = Variable(np.random.randn(2, 3))
 # x.name = 'x'

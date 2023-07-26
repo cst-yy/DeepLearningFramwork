@@ -8,6 +8,12 @@ import contextlib
 import weakref
 import descalefed
 import numpy as np
+from descalefed import cuda
+try:
+    import cupy
+    array_types = (np.ndarray, cupy.ndarray)
+except ImportError:
+    array_types = (np.ndarray)
 
 
 def setup_variable():
@@ -21,20 +27,21 @@ def setup_variable():
     Variable.__truediv__ = div
     Variable.__rtruediv__ = rdiv
     Variable.__pow__ = pow
+    Variable.__getitem__ = descalefed.functions.get_item
 
 
 class Config:
     enable_backprop = True
 
 
-def as_array(x):
-    if np.isscalar(x):
-        return np.array(x)
+def as_array(x, array_module=np):
+    if array_module.isscalar(x):
+        return array_module.array(x)
     return x
 
 
 def add(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, cuda.get_array_module(x0))
     return AddFunction()(x0, x1)
 
 
@@ -43,7 +50,7 @@ def no_grad():
 
 
 def mul(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, cuda.get_array_module(x0))
     return Mul()(x0, x1)
 
 
@@ -59,7 +66,7 @@ class Variable:
         data = as_array(data)
 
         if data is not None:
-            if not isinstance(data, np.ndarray):
+            if not isinstance(data, array_types):
                 raise TypeError(f'{type(data)} is not supported')
 
         self.data = data
@@ -102,7 +109,8 @@ class Variable:
 
     def backward(self, retain_grad=False, create_graph=False):
         if self.grad is None:
-            self.grad = Variable(np.ones_like(self.data))
+            xp = cuda.get_array_module(self.data)
+            self.grad = Variable(xp.ones_like(self.data))
 
         funcs = []
         seen_set = set()
@@ -156,6 +164,14 @@ class Variable:
 
     def sum(self, axis=None, keepdims=False):
         return descalefed.functions.sum(self, axis, keepdims)
+
+    def to_cpu(self):
+        if self.data is not None:
+            self.data = cuda.as_numpy(self.data)
+
+    def to_gpu(self):
+        if self.data is not None:
+            self.data = cuda.as_cupy(self.data)
 
 
 def as_variable(obj):
@@ -216,12 +232,12 @@ class Sub(Function):
 
 
 def sub(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, cuda.get_array_module(x0))
     return Sub()(x0, x1)
 
 
 def rsub(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, cuda.get_array_module(x0))
     return Sub()(x1, x0)
 
 
@@ -287,12 +303,12 @@ class Div(Function):
 
 
 def div(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, cuda.get_array_module(x0))
     return Div()(x0, x1)
 
 
 def rdiv(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, cuda.get_array_module(x0))
     return Div()(x1, x0)
 
 

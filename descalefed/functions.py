@@ -5,15 +5,15 @@
 @Motto：ABC(Always Be Coding)
 """
 import numpy as np
-from descalefed import utils
-from descalefed.core import Function
-from descalefed.core import Variable, as_variable
-from descalefed.utils import plt_dot_graph,reshape_sum_backward, sum_to
+from descalefed import utils, Variable, cuda
+from descalefed import Function, as_array, as_variable
+from descalefed.utils import plt_dot_graph, reshape_sum_backward, sum_to
 
 
 class Square(Function):
     def forward(self, x):
-        return x ** 2
+        xp = cuda.get_array_module(x)
+        return xp.square(x)
 
     def backward(self, gy):
         # x = self.inputs[0].data
@@ -24,7 +24,8 @@ class Square(Function):
 
 class Exp(Function):
     def forward(self, x):
-        return np.exp(x)
+        xp = cuda.get_array_module(x)
+        return xp.exp(x)
 
     def backward(self, gy):
         return gy * np.exp(self.inputs)
@@ -42,7 +43,8 @@ def exp(x):
 
 class Sin(Function):
     def forward(self, x):
-        return np.sin(x)
+        xp = cuda.get_array_module(x)
+        return xp.sin(x)
 
     def backward(self, gy):
         x, = self.inputs
@@ -56,7 +58,8 @@ def sin(x):
 
 class Cos(Function):
     def forward(self, x):
-        return np.cos(x)
+        xp = cuda.get_array_module(x)
+        return xp.cos(x)
 
     def backward(self, gy):
         x, = self.inputs
@@ -70,7 +73,8 @@ def cos(x):
 
 class Tanh(Function):
     def forward(self, x):
-        return np.tanh(x)
+        xp = cuda.get_array_module(x)
+        return xp.tanh(x)
 
     def backward(self, gy):
         y = self.outputs[0]()
@@ -142,23 +146,27 @@ def broadcast_to(x, shape):
         return as_variable(x)
     return BroadcastTo(shape)(x)
 
+
 class BroadcastTo(Function):
     def __init__(self, shape):
         self.shape = shape
 
     def forward(self, x):
         self.x_shape = x.shape
-        y = np.broadcast_to(x, self.shape)
+        xp = cuda.get_array_module(x)
+        y = xp.broadcast_to(x, self.shape)
         return y
 
     def backward(self, gy):
         gx = sum_to(gy, self.x_shape)
         return gx
 
+
 def broadcast_to(x, shape):
     if x.shape == shape:
         return as_variable(x)
     return BroadcastTo(shape)(x)
+
 
 class SumTo(Function):
     def __init__(self, shape):
@@ -173,10 +181,12 @@ class SumTo(Function):
         gx = broadcast_to(gy, self.x_shape)
         return gx
 
+
 def sum_to(x, shape):
     if x.shape == shape:
         return as_variable(x)
     return SumTo(shape)(x)
+
 
 class MatMul(Function):
     def forward(self, x, W):
@@ -189,13 +199,15 @@ class MatMul(Function):
         gW = matmul(x.T, gy)
         return gx, gW
 
-def matmul(x,W):
-    return MatMul()(x,W)
+
+def matmul(x, W):
+    return MatMul()(x, W)
+
 
 class MeanSquaredError(Function):
-    def forward(self,x0, x1):
+    def forward(self, x0, x1):
         diff = x0 - x1
-        y = (diff**2).sum() / len(diff)
+        y = (diff ** 2).sum() / len(diff)
         return y
 
     def backward(self, gy):
@@ -205,8 +217,10 @@ class MeanSquaredError(Function):
         gx1 = -gx0
         return gx0, gx1
 
+
 def mean_squared_error(x0, x1):
     return MeanSquaredError()(x0, x1)
+
 
 class Linear(Function):
     def forward(self, x, W, b):
@@ -227,14 +241,15 @@ def linear(x, W, b=None):
     return Linear()(x, W, b)
 
 
-def linear_simple(x,W,b=None):
-    t = matmul(x,W)
+def linear_simple(x, W, b=None):
+    t = matmul(x, W)
     if b is None:
         return t
 
-    y = t+b
+    y = t + b
     t.data = None
     return y
+
 
 # def sigmoid_simple(x):
 #     x = as_variable(x)
@@ -243,10 +258,9 @@ def linear_simple(x,W,b=None):
 
 class Sigmoid(Function):
     def forward(self, x):
-        # xp = cuda.get_array_module(xp)
-        y = 1 / (1 + np.exp(-x))
+        xp = cuda.get_array_module(x)
         # y = 1 / (1 + xp.exp(-x))
-        # y = xp.tanh(x * 0.5) * 0.5 + 0.5  # Better implementation
+        y = xp.tanh(x * 0.5) * 0.5 + 0.5
         return y
 
     def backward(self, gy):
@@ -259,23 +273,136 @@ def sigmoid(x):
     return Sigmoid()(x)
 
 
+class GetItem(Function):
+    def __init__(self, slices):
+        self.slices = slices
 
-if __name__ == '__main__':
-    x = Variable(np.array(1.0))
-    y = tanh(x)
-    x.name = 'x'
-    y.name = 'y'
-    y.backward(create_graph=True)
-    iters = 1
+    def forward(self, x):
+        y = x[self.slices]
+        return y
 
-    for i in range(iters):
-        gx = x.grad
-        x.cleargrad()
-        gx.backward(create_graph=True)
+    def backward(self, gy):
+        x, = self.inputs
+        f = GetItemGrad(self.slices, x.shape)
+        return f(gy)
 
-    gx = x.grad
-    gx.name = 'gx' + str(iters + 1)
-    plt_dot_graph(gx, verbose=False, to_file='tanh.png')
+
+class GetItemGrad(Function):
+    def __init__(self, slices, in_shape):
+        self.slices = slices
+        self.in_shape = in_shape
+
+    def forward(self, gy):
+        xp = cuda.get_array_module(gy)
+        gx = xp.zeros(self.in_shape, dtype=gy.dtype)
+
+        if xp is np:
+            np.add.at(gx, self.slices, gy)
+        else:
+            xp.scatter_add(gx, self.slices, gy)
+        return gx
+
+    def backward(self, ggx):
+        return get_item(ggx, self.slices)
+
+
+def get_item(x, slices):
+    f = GetItem(slices)
+    return f(x)
+
+
+# todo: 防止溢出策略 支持GPU计算
+class Softmax(Function):
+    def __init__(self, axis=1):
+        self.axis = axis
+
+    def forward(self, x):
+        xp = cuda.get_array_module(x)
+        y = x - x.max(axis=self.axis, keepdims=True)
+        y = xp.exp(y)
+        y /= y.sum(axis=self.axis, keepdims=True)
+        return y
+
+    def backward(self, gy):
+        y = self.outputs[0]()
+        gx = y * gy
+        sumdx = gx.sum(axis=self.axis, keepdims=True)
+        gx -= y * sumdx
+        return gx
+
+
+def softmax(x, axis=1):
+    return Softmax(axis)(x)
+
+
+class SoftmaxCrossEntropy(Function):
+    def forward(self, x, t):
+        N = x.shape[0]
+        log_z = utils.logsumexp(x, axis=1)
+        log_p = x - log_z
+        log_p = log_p[np.arange(N), t.ravel()]
+        y = -log_p.sum() / np.float32(N)
+        return y
+
+    def backward(self, gy):
+        x, t = self.inputs
+        N, CLS_NUM = x.shape
+
+        gy *= 1/N
+        y = softmax(x)
+        # convert to one-hot
+        xp = cuda.get_array_module(t.data)
+        t_onehot = xp.eye(CLS_NUM, dtype=t.dtype)[t.data]
+        y = (y - t_onehot) * gy
+        return y
+
+
+def softmax_cross_entropy(x, t):
+    return SoftmaxCrossEntropy()(x, t)
+
+
+class ReLU(Function):
+    def forward(self, x):
+        xp = cuda.get_array_module(x)
+        return xp.maximum(x, 0.0)
+
+    def backward(self, gy):
+        x, = self.inputs
+        mask = x.data > 0
+        gx = gy * mask
+        return gx
+
+
+def relu(x):
+    return ReLU()(x)
+
+
+def accuracy(y, t):
+    y, t = as_variable(y), as_variable(t)
+
+    pred = y.data.argmax(axis=1).reshape(t.shape)
+    result = (pred == t.data)
+    acc = result.mean()
+    return Variable(as_array(acc))
+
+
+
+# if __name__ == '__main__':
+#     x = Variable(np.array(1.0))
+#     y = tanh(x)
+#     x.name = 'x'
+#     y.name = 'y'
+#     y.backward(create_graph=True)
+#     iters = 1
+#
+#     for i in range(iters):
+#         gx = x.grad
+#         x.cleargrad()
+#         gx.backward(create_graph=True)
+#
+#     gx = x.grad
+#     gx.name = 'gx' + str(iters + 1)
+#     plt_dot_graph(gx, verbose=False, to_file='tanh.png')
 
 # if __name__ == '__main__':
 #     x = Variable(np.linspace(-7, 7, 200))

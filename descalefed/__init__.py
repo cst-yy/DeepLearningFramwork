@@ -31,5 +31,10 @@ else:
 import descalefed.functions
 import descalefed.utils
 import descalefed.layers
+import descalefed.optimizers
+import descalefed.datasets
+import descalefed.dataLoaders
+import descalefed.cuda
+import descalefed.transforms
 
 setup_variable()
