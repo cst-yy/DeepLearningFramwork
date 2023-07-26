@@ -17,16 +17,6 @@ class Model(Layer):
         return utils.plt_dot_graph(y, verbose=True, to_file=to_file)
 
 
-# class TwoLayerNetwork(Model):
-#     def __init__(self, hidden_size, output_size):
-#         super().__init__()
-#         self.l1 = Linear(hidden_size)
-#         self.l2 = Linear(output_size)
-#
-#     def forward(self, x):
-#         y = F.sigmoid(self.l1(x))
-#         return self.l2(y)
-
 class MLP(Model):
     def __init__(self, fc_output_size, activation=F.sigmoid):
         super().__init__()
