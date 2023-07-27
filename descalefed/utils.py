@@ -3,6 +3,7 @@ import subprocess
 import time
 import descalefed.cuda as cuda
 import urllib.request
+import numpy as np
 
 
 def _dot_var(v, verbose=False):
@@ -232,6 +233,11 @@ def save_cache_npz(data, label, filename, train=False):
     print(" Done")
     return filepath
 
+
+def get_conv_outsize(input_size, kernel_size, stride, pad):
+    return (input_size + pad * 2 - kernel_size) // stride + 1
+
+
 # x  = Variable(np.random.randn(2, 3))
 # x.name = 'x'
 # print(_dot_var(x))
@@ -245,3 +251,4 @@ def save_cache_npz(data, label, filename, train=False):
 # y.name = 'y'
 # txt = _dot_func(y.creator)
 # print(txt)
+

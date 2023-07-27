@@ -8,6 +8,7 @@ import numpy as np
 from descalefed import utils, Variable, cuda
 from descalefed import Function, as_array, as_variable
 from descalefed.utils import plt_dot_graph, reshape_sum_backward, sum_to
+import descalefed
 
 
 class Square(Function):
@@ -385,6 +386,17 @@ def accuracy(y, t):
     acc = result.mean()
     return Variable(as_array(acc))
 
+
+def dropout(x, dropout_ratio=0.5):
+    x = as_variable(x)
+    if descalefed.Config.train:
+        xp = cuda.get_array_module(x)
+        mask = xp.random.rand(*x.shape)>dropout_ratio
+        scale = xp.array(1-dropout_ratio).astype(np.dtype)
+        y = x*mask / scale
+        return y
+    else:
+        return x
 
 
 # if __name__ == '__main__':
